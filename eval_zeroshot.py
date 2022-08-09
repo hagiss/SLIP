@@ -196,9 +196,26 @@ def validate_zeroshot(val_loader, model, tokenizer):
         text_labels = torch.arange(logits_per_text.shape[0]).cuda(non_blocking=True)
 
         r1, r5, r10 = rank(logits_per_image, image_labels, topk=(1, 5, 10))
-        rt1, rt5, rt10 = rank(logits_per_image, text_labels, topk=(1, 5, 10))
+        rt1, rt5, rt10 = rank_text(logits_per_text, text_labels, topk=(1, 5, 10))
 
         print(f"R1: {r1}, R5: {r5}, R10: {r10}, RT1: {rt1}, RT5: {rt5}, RT10: {rt10}")
+
+def rank_text(output, target, topk=(1,)):
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        target = target // 5
+
+        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+        res = []
+        for k in topk:
+            correct_k = correct[:k].t()
+            correct_k = correct_k.sum(1, keepdim=True)
+            correct_k = (correct_k > 0).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 def rank(output, target, topk=(1,)):
     with torch.no_grad():
