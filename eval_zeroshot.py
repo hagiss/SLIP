@@ -720,7 +720,7 @@ def INetRVal(root, bs, model, tokenizer):
     test_transform = transforms.Compose(
         [transforms.Resize(256), transforms.CenterCrop(224), transforms.ToTensor(), transforms.Normalize(mean, std)])
 
-    imagenet_r = ImageFolder(root=root, transform=test_transform)
+    imagenet_r = ImageFolder(root=root+"imagenet-r", transform=test_transform)
     imagenet_r_loader = torch.utils.data.DataLoader(imagenet_r, batch_size=bs, shuffle=False,
                                                     num_workers=4, pin_memory=True)
     confidence = []
