@@ -24,6 +24,7 @@ import utils
 from torchvision.datasets import ImageFolder
 import numpy as np
 import torch.nn.functional as F
+from tqdm import tqdm
 
 
 def pil_loader(path):
@@ -333,7 +334,7 @@ def INetCVal(root, bs, model, tokenizer):
     ]
 
     top1, top5, mlp_top1, mlp_top5 = [], [], [], []
-    for distortion_name in distortions:
+    for distortion_name in tqdm(distortions):
         t1, t5 = show_performance(distortion_name, root, bs, model, tokenizer)
         top1.append(t1)
         top5.append(t5)
@@ -489,7 +490,7 @@ def INetAVal(root, bs, model, tokenizer):
     num_correct = 0
     mlp_num_correct = 0
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(nae_loader):
+        for batch_idx, (data, target) in tqdm(enumerate(nae_loader)):
             images = data.cuda(non_blocking=True)
             target = target.cuda(non_blocking=True)
 
@@ -711,7 +712,7 @@ def INetRVal(root, bs, model, tokenizer):
 
     num_correct = 0
     with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(imagenet_r_loader):
+        for batch_idx, (data, target) in tqdm(enumerate(imagenet_r_loader)):
             images = data.cuda(non_blocking=True)
             target = target.cuda(non_blocking=True)
 
