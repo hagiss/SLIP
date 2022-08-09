@@ -500,7 +500,6 @@ def INetAVal(root, bs, model, tokenizer):
             logits_per_image = image_features @ text_features.t()
 
             logits_per_image = logits_per_image[:,indices_in_1k]
-            mlp_logits_per_image = mlp_logits_per_image[:,indices_in_1k]
 
             # accuracy
             pred = logits_per_image.data.max(1)[1]
