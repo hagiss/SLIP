@@ -4,20 +4,30 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 import argparse
+from torch.utils.data import Dataset
 from collections import OrderedDict
 import json
 import os
+from os import listdir
 from sklearn import metrics
 
 import torch
 import torch.backends.cudnn as cudnn
 import torch.utils.data
 import torchvision.transforms as transforms
+from PIL import Image, ImageFile
 
 import datasets
 import models
 from tokenizer import SimpleTokenizer
 import utils
+
+
+def pil_loader(path):
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, 'rb') as f:
+        img = Image.open(f)
+        return img.convert('RGB')
 
 
 def get_args_parser():
@@ -28,6 +38,67 @@ def get_args_parser():
                         help='number of data loading workers per process')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
     return parser
+
+
+class COCOvalDataset(Dataset):
+    def __init__(self, root, transform):
+        super().__init__()
+        self.transform = transform
+
+        # load image_path, annotations
+        image_path = os.path.join(root, "val2017")
+        annotation_path = os.path.join(root, "annotations-2/captions_val2017.json")
+
+        # key is image_key, value is (path, [])
+        self.datas = {}
+        for path in listdir(image_path):
+            key = int(path.split(".")[0])
+            self.datas[key] = (os.path.join(image_path, path), [])
+
+        # load captions
+        with open(annotation_path) as json_file:
+            json_data = json.load(json_file)
+            annotations = json_data['annotations']
+
+        err_cnt = 0
+        for ann in annotations:
+            key = ann['image_id']
+            caption = ann['caption']
+            try:
+                self.datas[key][1].append(caption)
+            except:
+                err_cnt += 1
+
+        self.datas = list(self.datas.values())
+        print(f"COCO Length: {len(self.datas)}")
+        print(f"Total errors in COCO: {err_cnt}")
+
+    def __getitem__(self, item):
+        # print(f"item: {item}")
+        image_path, texts = self.datas[item]
+
+        image = pil_loader(image_path)
+        image = self.transform(image)
+        # if len(texts) != 5:
+        #     print(len(texts))
+
+        # ret = {"image": image, "text1": texts[0],}
+        # return ret
+        return image, "\t".join(texts[:5])
+
+    def get_items(self, idx):
+        images = []
+        texts = []
+        for i in idx:
+            image, text = self.__getitem__(i)
+            images.append(image)
+            texts.append(text)
+
+        return images, texts
+
+    def __len__(self):
+        return len(self.datas)
+
 
 
 def main(args):
@@ -77,93 +148,65 @@ def main(args):
                                  std=[0.229, 0.224, 0.225])
         ])
 
-    results = []
-    for d in catalog:
-        print('Evaluating {}'.format(d))
-        val_dataset = datasets.get_downstream_dataset(catalog, name=d, is_train=False, transform=val_transform)
+    val_dataset = None # COCO dataset
 
-        val_loader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=True, drop_last=False)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, num_workers=4, drop_last=False)
 
-        templates = all_templates[d]
-        labels = all_labels[d]
+    validate_zeroshot(val_loader, model, tokenizer)
 
-        is_acc = d not in ['aircraft', 'pets', 'caltech101', 'flowers', 'kinetics700_frames', 'hateful_memes']
-
-        acc_or_outputs = validate_zeroshot(val_loader, templates, labels, model, tokenizer, is_acc)
-
-        if d in ['aircraft', 'pets', 'caltech101', 'flowers']:
-            metric = mean_per_class(*acc_or_outputs)
-        elif d == 'kinetics700_frames':
-            top1, top5 = accuracy(*acc_or_outputs, topk=(1, 5))
-            metric = (top1 + top5) / 2
-            metric = metric.item()
-        elif d == 'hateful_memes':
-            metric = roc_auc(*acc_or_outputs)
-        else:
-            metric = acc_or_outputs
-
-        results.append(metric)
-
-        print('metric:', metric)
-
-    print('all results:')
-    for x in results:
-        print('{:.1f}'.format(x))
-
-def validate_zeroshot(val_loader, templates, labels, model, tokenizer, is_acc):
+def validate_zeroshot(val_loader, model, tokenizer):
     # switch to evaluate mode
     model.eval()
-    total_top1 = 0
-    total_images = 0
-
-    all_outputs = []
-    all_targets = []
 
     print('=> encoding captions')
     with torch.no_grad():
         text_features = []
-        for label in labels:
-            if isinstance(label, list):
-                texts = [t.format(l) for t in templates for l in label]
-            else:
-                texts = [t.format(label) for t in templates]
-            texts = tokenizer(texts).cuda(non_blocking=True)
-            texts = texts.view(-1, 77).contiguous()
-            class_embeddings = utils.get_model(model).encode_text(texts)
-            class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
-            class_embeddings = class_embeddings.mean(dim=0)
-            class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
-            text_features.append(class_embeddings)
-        text_features = torch.stack(text_features, dim=0)
+        image_features = []
 
-        for images, target in val_loader:
+        for images, texts in val_loader:
             images = images.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
+            texts = [item for t in texts for item in t.split('\t')]
+            texts = tokenizer(texts).cuda(non_blocking=True)
 
             # encode images
-            image_features = utils.get_model(model).encode_image(images)
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            image_feature = utils.get_model(model).encode_image(images)
+            image_feature = image_feature / image_feature.norm(dim=-1, keepdim=True)
 
-            # cosine similarity as logits
-            logits_per_image = image_features @ text_features.t()
+            text_feature = utils.get_model(model).encode_text(texts)
+            text_feature = text_feature / text_feature.norm(dim=-1, keepdim=True)
 
-            if is_acc:
-                # measure accuracy and record loss
-                pred = logits_per_image.argmax(dim=1)
-                correct = pred.eq(target).sum()
-                total_top1 += correct.item()
-                total_images += images.size(0)
-            else:
-                all_outputs.append(logits_per_image.cpu())
-                all_targets.append(target.cpu())
-            
-    if is_acc:
-        return 100 * total_top1 / total_images
-    else:
-        return torch.cat(all_outputs), torch.cat(all_targets)
+            image_features.append(image_feature)
+            text_features.append(text_feature)
 
+        image_features = torch.cat(image_features, dim=0)
+        text_features = torch.cat(text_features, dim=0)
+
+        logits_per_image = image_features @ text_features.t()
+        logits_per_text = text_features @ image_features.t()
+
+        image_labels = torch.arange(logits_per_image.shape[0]).cuda(non_blocking=True)
+        text_labels = torch.arange(logits_per_text.shape[0]).cuda(non_blocking=True)
+
+        r1, r5, r10 = rank(logits_per_image, image_labels, topk=(1, 5, 10))
+        rt1, rt5, rt10 = rank(logits_per_image, text_labels, topk=(1, 5, 10))
+
+        print(f"R1: {r1}, R5: {r5}, R10: {r10}, RT1: {rt1}, RT5: {rt5}, RT10: {rt10}")
+
+def rank(output, target, topk=(1,)):
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t() // 5
+
+        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
+        res = []
+        for k in topk:
+            correct_k = correct[:k].t()
+            correct_k = correct_k.sum(1, keepdim=True)
+            correct_k = (correct_k > 0).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
