@@ -47,7 +47,7 @@ class COCOvalDataset(Dataset):
 
         # load image_path, annotations
         image_path = os.path.join(root, "val2017")
-        annotation_path = os.path.join(root, "annotations-2/captions_val2017.json")
+        annotation_path = os.path.join(root, "annotations/captions_val2017.json")
 
         # key is image_key, value is (path, [])
         self.datas = {}
@@ -142,13 +142,12 @@ def main(args):
     val_transform = transforms.Compose([
             transforms.Resize(224),
             transforms.CenterCrop(224),
-            lambda x: x.convert('RGB'),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
         ])
 
-    val_dataset = None # COCO dataset
+    val_dataset = COCOvalDataset("/data/dataset", val_transform)
 
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, num_workers=4, drop_last=False)
 
