@@ -198,7 +198,7 @@ def validate_zeroshot(val_loader, model, tokenizer):
         r1, r5, r10 = rank(logits_per_image, image_labels, topk=(1, 5, 10))
         rt1, rt5, rt10 = rank_text(logits_per_text, text_labels, topk=(1, 5, 10))
 
-        print(f"R1: {r1}, R5: {r5}, R10: {r10}, RT1: {rt1}, RT5: {rt5}, RT10: {rt10}")
+        print(f"R1: {r1.item()}, R5: {r5.item()}, R10: {r10.item()}, RT1: {rt1.item()}, RT5: {rt5.item()}, RT10: {rt10.item()}")
 
 def rank_text(output, target, topk=(1,)):
     with torch.no_grad():
@@ -355,9 +355,9 @@ def INetCVal(root, bs, model, tokenizer):
         t1, t5 = show_performance(distortion_name, root, bs, model, tokenizer)
         top1.append(t1)
         top5.append(t5)
-        print('Distortion: {:15s}  | CE (unnormalized) (%): top1: {:.2f} top5: {:.2f}'.format(distortion_name, t1, t5))
+        print('Distortion: {:15s}  | CE (unnormalized) (%): top1: {:.2f} top5: {:.2f}'.format(distortion_name, t1*100, t5*100))
 
-    print('ImageNet-C top1: {:.2f} top5: {:.2f}'.format(np.mean(top1), np.mean(top5)))
+    print('ImageNet-C top1: {:.2f} top5: {:.2f}'.format(np.mean(top1)*100, np.mean(top5)*100))
 
 
 def INetAVal(root, bs, model, tokenizer):
@@ -531,7 +531,7 @@ def INetAVal(root, bs, model, tokenizer):
     # dist.barrier()
     print(num_correct, len(nae_loader.dataset))
     acc = num_correct / len(nae_loader.dataset)
-    print("Imagenet-A Acc: {:.2f}".format(acc))
+    print("Imagenet-A Acc: {:.2f}".format(acc*100))
 
 
 def INetRVal(root, bs, model, tokenizer):
@@ -753,7 +753,7 @@ def INetRVal(root, bs, model, tokenizer):
     # dist.barrier()
     print(num_correct, len(imagenet_r_loader.dataset))
     acc = num_correct / len(imagenet_r_loader.dataset)
-    print("Imagenet-R Acc: {:.2f}".format(acc))
+    print("Imagenet-R Acc: {:.2f}".format(acc*100))
 
 
 if __name__ == '__main__':
