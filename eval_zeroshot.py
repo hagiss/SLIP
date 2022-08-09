@@ -155,7 +155,7 @@ def main(args):
 
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=128, num_workers=4, drop_last=False)
 
-    # validate_zeroshot(val_loader, model, tokenizer)
+    validate_zeroshot(val_loader, model, tokenizer)
     batch_size = 128
     root = "/data/dataset/imagenet_car"
     # INetCVal(root, batch_size, model, tokenizer)
@@ -512,6 +512,7 @@ def INetAVal(root, bs, model, tokenizer):
 
     # return num_correct / len(nae_loader.dataset), confidence.copy(), correct.copy()
     # dist.barrier()
+    print(num_correct, len(nae_loader.dataset))
     acc = num_correct / len(nae_loader.dataset)
     print("Imagenet-A Acc: {:.2f}".format(acc))
 
@@ -733,6 +734,7 @@ def INetRVal(root, bs, model, tokenizer):
             correct.extend(pred.eq(target).to('cpu').numpy().squeeze().tolist())
 
     # dist.barrier()
+    print(num_correct, len(imagenet_r_loader.dataset))
     acc = num_correct / len(imagenet_r_loader.dataset)
     print("Imagenet-R Acc: {:.2f}".format(acc))
 
